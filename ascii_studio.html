@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ASCII Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #fbfaf7; --panel: #f0eee8; --panel2: #ffffff; --edge: #d9d4c9;
+    --fg: #26221b; --dim: #857e70; --acc: #0d7a68; --acc2: #0b6494;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; background: var(--bg);
+    color: var(--fg); font: 13px/1.45 Menlo, Consolas, "Cascadia Mono", monospace;
+    overflow: hidden;
+  }
+  header {
+    padding: 8px 14px; border-bottom: 1px solid var(--edge);
+    display: flex; gap: 14px; align-items: baseline;
+  }
+  header h1 { font-size: 14px; margin: 0; color: var(--acc); letter-spacing: 2px; }
+  header .hint { color: var(--dim); font-size: 11px; }
+  main { flex: 1; display: flex; min-height: 0; }
+  aside {
+    width: 292px; flex: none; overflow-y: auto; background: var(--panel);
+    border-right: 1px solid var(--edge); padding: 10px 12px 24px;
+  }
+  section { margin-bottom: 14px; }
+  section h2 {
+    font-size: 10px; margin: 0 0 6px; color: var(--acc2);
+    letter-spacing: 1.5px; text-transform: uppercase;
+    border-bottom: 1px solid var(--edge); padding-bottom: 3px;
+  }
+  label.row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+  label.row .name { width: 76px; flex: none; color: var(--dim); }
+  label.row .val { width: 52px; flex: none; text-align: right; color: var(--acc); }
+  input[type=range] { flex: 1; accent-color: var(--acc); height: 14px; }
+  select, button, input[type=text] {
+    background: var(--panel2); color: var(--fg); border: 1px solid var(--edge);
+    border-radius: 4px; padding: 4px 8px; font: inherit;
+  }
+  select { width: 100%; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--acc); color: var(--acc); }
+  button.primary { border-color: var(--acc); color: var(--acc); }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .btns button { flex: 1 1 44%; }
+  input[type=checkbox] { accent-color: var(--acc); }
+  input[type=color] { padding: 0; width: 34px; height: 20px; border: 1px solid var(--edge); background: none; }
+  .drop {
+    border: 1px dashed var(--edge); border-radius: 6px; padding: 10px;
+    text-align: center; color: var(--dim); margin-bottom: 8px; font-size: 11px;
+  }
+  .drop.over { border-color: var(--acc); color: var(--acc); }
+  #stage { flex: 1; position: relative; min-width: 0; background: var(--bg); }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+  #cv.dragging { cursor: grabbing; }
+  #status {
+    border-top: 1px solid var(--edge); background: var(--panel);
+    padding: 4px 14px; color: var(--dim); font-size: 11px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  #status b { color: var(--acc); font-weight: normal; }
+  #toast {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: var(--panel2); border: 1px solid var(--acc); color: var(--acc);
+    padding: 6px 14px; border-radius: 4px; opacity: 0; transition: opacity .25s;
+    pointer-events: none; font-size: 12px;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ASCII STUDIO</h1>
+  <span class="hint">drag &amp; drop an image / video &middot; paste &middot; wheel = zoom &middot; drag = pan &middot; space = play</span>
+</header>
+<main>
+  <aside>
+    <section class="drop" id="drop">drop image or video here<br>or paste (&#8984;V)</section>
+    <section>
+      <h2>Image</h2>
+      <div class="btns">
+        <button id="open" class="primary">Open&hellip;</button>
+        <button id="sample">Sample</button>
+      </div>
+      <div class="btns" id="vidBtns" style="display:none;margin-top:6px">
+        <button id="play">&#9654; play</button>
+      </div>
+      <input type="file" id="file" accept="image/*,video/*" hidden>
+      <div id="fname" style="color:var(--dim);font-size:11px;margin-top:6px">nothing loaded</div>
+    </section>
+    <section>
+      <h2>Output</h2>
+      <label class="row"><span class="name">width</span>
+        <input type="range" id="width" min="16" max="3000" value="120" step="2">
+        <span class="val" id="widthV">120</span></label>
+      <label class="row"><span class="name">line height</span>
+        <input type="range" id="lineh" min="0.5" max="2" value="1.35" step="0.05">
+        <span class="val" id="linehV">1.35</span></label>
+      <label class="row"><span class="name">framerate</span>
+        <input type="range" id="fps" min="1" max="30" value="12" step="1">
+        <span class="val" id="fpsV">12</span></label>
+    </section>
+    <section>
+      <h2>Look</h2>
+      <select id="ramp"></select>
+      <label class="row"><span class="name">sharpness</span>
+        <input type="range" id="sharp" min="0" max="500" value="0" step="5">
+        <span class="val" id="sharpV">0</span></label>
+      <label class="row"><span class="name">brightness</span>
+        <input type="range" id="bright" min="0.1" max="3" value="1" step="0.05">
+        <span class="val" id="brightV">1.00</span></label>
+      <label class="row"><span class="name">contrast</span>
+        <input type="range" id="contrast" min="0.1" max="3" value="1" step="0.05">
+        <span class="val" id="contrastV">1.00</span></label>
+      <label class="row"><span class="name">gamma</span>
+        <input type="range" id="gamma" min="0.2" max="3" value="1" step="0.05">
+        <span class="val" id="gammaV">1.00</span></label>
+      <label class="row"><span class="name">invert</span>
+        <input type="checkbox" id="invert"></label>
+      <label class="row"><span class="name">color</span>
+        <input type="checkbox" id="color" checked>
+        <input type="color" id="tint" value="#111111" title="mono tint">
+        <span style="color:var(--dim);font-size:11px">mono tint</span></label>
+    </section>
+    <section>
+      <h2>Export</h2>
+      <div class="btns">
+        <button id="exTxt">.txt</button>
+        <button id="exAns">.ans truecolor</button>
+        <button id="exPng">.png</button>
+        <button id="exCopy">copy text</button>
+        <button id="exPy" disabled title="self-contained python player (video only)">python &#11015;</button>
+      </div>
+    </section>
+    <section>
+      <h2>View</h2>
+      <div class="btns">
+        <button id="fit">fit</button>
+        <button id="z100">100%</button>
+        <button id="zIn">+</button>
+        <button id="zOut">&minus;</button>
+      </div>
+    </section>
+  </aside>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="toast"></div>
+  </div>
+</main>
+<div id="status">loading&hellip;</div>
+<script>
+/*CORE-START*/
+"use strict";
+var RAMPS = [
+  ["default-10",   " .:-=+*#%@"],
+  ["classic-70",   "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "],
+  ["minimal-4",    " .#@"],
+  ["detailed-12",  " .,:;irsXA253hMHGS#9B&@"],
+  ["heavy-14",     " .`^\",:;Il!i~+_-?][}{1)(|/tfjrxnuvczmwqpdbkhao*#MW&8%B@$"],
+  ["cp437-shades", " ░▒▓█"],
+  ["cp437-mix",    " ·:∙+▒░▓█"],
+  ["cp437-blocks", "▁▂▃▄▅▆▇█"],
+  ["cp437-dense",  " .·:!i│║░▒▓█"],
+  ["braille",      " ⠁⠂⠃⠇⠏⠟⠿⡿⣿"],
+  ["binary",       " .01"],
+  ["pure-binary",  "01"],
+  ["dots",         " ·•●◉█"],
+  ["tech",         " .,_-~+=*%#$@"],
+  ["greek",        " ·εδξσφψΩ"],
+  ["arrows",       " ·:↑↗→↘↓↙←↖█"]
+];
+var MAX_W = 3000, MIN_W = 16;
+
+/* Paper standard: darker pixel = denser char (ink).  The ramps above are
+   authored bright->dense, so flip them once at startup; the "invert" box
+   restores bright=dense for viewing on dark backgrounds. */
+for (var rvi = 0; rvi < RAMPS.length; rvi++)
+  RAMPS[rvi][1] = RAMPS[rvi][1].split("").reverse().join("");
+
+function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+/* One LUT combining brightness -> contrast -> gamma (same order as the
+   curses version). */
+function buildLUT(bright, contrast, gamma) {
+  var lut = new Uint8ClampedArray(256);
+  for (var i = 0; i < 256; i++) {
+    var x = i * bright;
+    x = (x - 128) * contrast + 128;
+    x = 255 * Math.pow(clamp(x, 0, 255) / 255, 1 / gamma);
+    lut[i] = clamp(Math.round(x), 0, 255);
+  }
+  return lut;
+}
+
+/* Unsharp mask: separable 3-tap blur [1,2,1]/4, then
+   out = src + amount*(src - blur).  `d` modified in place.
+   Scratch buffers are cached across calls (huge at 3000px widths). */
+var _usSrc = null, _usTmp = null;
+function unsharp(d, w, h, amount) {
+  var a = amount / 100;
+  if (a <= 0) return;
+  var len = d.length;
+  if (!_usSrc || _usSrc.length !== len) {
+    _usSrc = new Uint8ClampedArray(len);
+    _usTmp = new Uint8ClampedArray(len);
+  }
+  var src = _usSrc, tmp = _usTmp;
+  src.set(d);
+  var x, y, c, i, l, r, u, dn, o, b0, b1, b2;
+  for (y = 0; y < h; y++) {              // horizontal: src -> tmp
+    o = y * w * 4;
+    for (x = 0; x < w; x++) {
+      i = o + x * 4;
+      l = x > 0 ? -4 : 0; r = x < w - 1 ? 4 : 0;
+      tmp[i] = (src[i] + 2 * src[i + l] + src[i + r]) / 4;
+      tmp[i + 1] = (src[i + 1] + 2 * src[i + l + 1] + src[i + r + 1]) / 4;
+      tmp[i + 2] = (src[i + 2] + 2 * src[i + l + 2] + src[i + r + 2]) / 4;
+      tmp[i + 3] = (src[i + 3] + 2 * src[i + l + 3] + src[i + r + 3]) / 4;
+    }
+  }
+  for (y = 0; y < h; y++) {              // vertical: tmp -> blur, combine
+    o = y * w * 4;
+    u = y > 0 ? -w * 4 : 0; dn = y < h - 1 ? w * 4 : 0;
+    for (x = 0; x < w; x++) {
+      i = o + x * 4;
+      for (c = 0; c < 4; c++) {
+        b0 = (tmp[i + c] + 2 * tmp[i + u + c] + tmp[i + dn + c]) / 4;
+        b1 = src[i + c] - b0;              // detail
+        b2 = src[i + c] + a * b1;
+        d[i + c] = b2 < 0 ? 0 : b2 > 255 ? 255 : b2;
+      }
+    }
+  }
+}
+/* ImageData-like {data,width,height} -> {rows:[str], colors:Uint8ClampedArray
+   (w*h*3), w, h, ramp}.  opts: {ramp, invert, bright, contrast, gamma, sharp} */
+function gridFromImage(id, opts) {
+  var w = id.width, h = id.height, d = id.data, i, p;
+  if (opts.sharp > 0) {
+    d = new Uint8ClampedArray(d);
+    unsharp(d, w, h, opts.sharp);
+  }
+  var lut = buildLUT(opts.bright, opts.contrast, opts.gamma);
+  var rampStr = RAMPS[opts.ramp][1];
+  if (opts.invert) rampStr = rampStr.split("").reverse().join("");
+  var n = rampStr.length;
+  var codes = new Uint16Array(n);
+  for (i = 0; i < n; i++) codes[i] = rampStr.charCodeAt(i);
+  var colors = new Uint8ClampedArray(w * h * 3);
+  var charCodes = new Uint16Array(w * h);
+  for (i = 0, p = 0; i < w * h; i++, p += 4) {
+    var r = lut[d[p]], g = lut[d[p + 1]], b = lut[d[p + 2]];
+    var lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    charCodes[i] = codes[Math.min(n - 1, (lum * n / 256) | 0)];
+    var q = i * 3;
+    colors[q] = r; colors[q + 1] = g; colors[q + 2] = b;
+  }
+  var rows = new Array(h);
+  for (var y = 0; y < h; y++)
+    rows[y] = String.fromCharCode.apply(null,
+                                        charCodes.subarray(y * w, y * w + w));
+  return { rows: rows, colors: colors, w: w, h: h, ramp: rampStr };
+}
+
+/* rows + per-cell RGB -> ANSI truecolor text (runs share one escape,
+   like the curses exporter). */
+function toANSI(grid) {
+  var out = [];
+  for (var y = 0; y < grid.h; y++) {
+    var row = grid.rows[y], o = y * grid.w, last = -4, buf = [];
+    for (var x = 0; x < grid.w; x++) {
+      var q = (o + x) * 3;
+      if (q !== last) {
+        if (buf.length) out.push(buf.join(""));
+        out.push("\u001b[38;2;" + grid.colors[q] + ";" +
+                 grid.colors[q + 1] + ";" + grid.colors[q + 2] + "m");
+        buf = [];
+        last = q;
+      }
+      buf.push(row[x]);
+    }
+    out.push(buf.join("") + "\u001b[0m\n");
+  }
+  return out.join("");
+}
+
+function toTXT(grid) { return grid.rows.join("\n") + "\n"; }
+
+/* Synthetic diagonal RGB gradient (same pattern as the curses selftest) */
+function sampleImageData(w, h) {
+  var d = new Uint8ClampedArray(w * h * 4);
+  for (var y = 0; y < h; y++)
+    for (var x = 0; x < w; x++) {
+      var i = (y * w + x) * 4;
+      d[i] = x * 255 / (w - 1);
+      d[i + 1] = y * 255 / (h - 1);
+      d[i + 2] = (x + y) * 255 / (w + h - 2);
+      d[i + 3] = 255;
+    }
+  return { data: d, width: w, height: h };
+}
+/* Row count so art keeps the source's proportions at the given output width
+   and line height L (in font-size multiples).  Monospace advance is ~0.6em,
+   so cell height:width = L/0.6 — taller lines => fewer rows: the grid is
+   resampled, never squashed. */
+function gridDims(imgW, imgH, width, lineh) {
+  var h = Math.round(imgH * (width / imgW) * 0.6 / lineh);
+  return { w: width, h: Math.max(1, h) };
+}
+
+/* ---- video frame packing + python player builder (all pure) ---- */
+function utf8Encode(s) {
+  var out = [], i, c;
+  for (i = 0; i < s.length; i++) {
+    c = s.charCodeAt(i);
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xC0 | (c >> 6), 0x80 | (c & 63));
+    else out.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return new Uint8Array(out);          // ramps are BMP-only, no surrogates
+}
+
+function b64Encode(u8) {
+  var B = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  var out = [], n = u8.length, i;
+  for (i = 0; i < n; i += 3) {
+    var b0 = u8[i], b1 = i + 1 < n ? u8[i + 1] : 0, b2 = i + 2 < n ? u8[i + 2] : 0;
+    out.push(B[b0 >> 2], B[(b0 & 3) << 4 | (b1 >> 4)]);
+    out.push(i + 1 < n ? B[(b1 & 15) << 2 | (b2 >> 6)] : "=");
+    out.push(i + 2 < n ? B[b2 & 63] : "=");
+  }
+  return out.join("");
+}
+
+/* One frame -> [u32 BE utf8len][utf8 chars][rgb per cell] */
+function packFrame(rows, colors, w, h) {
+  var u = utf8Encode(rows.join(""));
+  var out = new Uint8Array(4 + u.length + w * h * 3);
+  out[0] = (u.length >>> 24) & 255; out[1] = (u.length >>> 16) & 255;
+  out[2] = (u.length >>> 8) & 255;  out[3] = u.length & 255;
+  out.set(u, 4);
+  out.set(colors, 4 + u.length);
+  return out;
+}
+
+function concatU8(list) {
+  var n = 0, i;
+  for (i = 0; i < list.length; i++) n += list[i].length;
+  var out = new Uint8Array(n), o = 0;
+  for (i = 0; i < list.length; i++) { out.set(list[i], o); o += list[i].length; }
+  return out;
+}
+
+/* Full source of a self-contained python animation player (stdlib only).
+   b64 payload = concat of packFrame() frames, optionally zlib-deflated. */
+function buildPlayerPy(name, w, h, fps, durS, n, algo, b64) {
+  var safe = String(name).replace(/["\\]/g, "");
+  var chunks = [];
+  for (var i = 0; i < b64.length; i += 76)
+    chunks.push('    "' + b64.slice(i, i + 76) + '"');
+  return String.raw`#!/usr/bin/env python3
+"""ASCII Studio video player - self-contained, Python 3 stdlib only.
+
+source : ${safe}
+frames : ${n} @ ${fps} fps (${durS.toFixed(1)}s), ${w}x${h} cells, 24-bit color
+usage  : python3 thisfile.py [--fps N] [--loop]
+Rendered with the app's current invert/tint settings; for a dark terminal,
+re-export from ASCII Studio with 'invert' ticked.
+"""
+import argparse, base64, struct, sys, time, zlib
+
+W, H, FPS, ALGO = ${w}, ${h}, ${fps}, "${algo}"
+DATA = (
+${chunks.join(",\n")}
+)
+
+def load_frames():
+    raw = base64.b64decode("".join(DATA))
+    if ALGO == "zlib":
+        raw = zlib.decompress(raw)
+    n = W * H
+    frames, off = [], 0
+    while off < len(raw):
+        (u,) = struct.unpack_from(">I", raw, off)
+        off += 4
+        txt = raw[off:off + u].decode("utf-8")
+        off += u
+        frames.append((txt, raw[off:off + 3 * n]))
+        off += 3 * n
+    return frames
+
+def render(txt, cols):
+    buf = ["\x1b[H"]
+    last = None
+    q = 0
+    for y in range(H):
+        for x in range(W):
+            key = cols[q] << 16 | cols[q + 1] << 8 | cols[q + 2]
+            if key != last:
+                buf.append("\x1b[38;2;%d;%d;%dm" % (cols[q], cols[q + 1], cols[q + 2]))
+                last = key
+            buf.append(txt[y * W + x])
+            q += 3
+        buf.append("\x1b[0m\n")
+    return "".join(buf)
+
+def main():
+    ap = argparse.ArgumentParser(description="ASCII Studio video player")
+    ap.add_argument("--fps", type=float, default=FPS, help="playback rate")
+    ap.add_argument("--loop", action="store_true", help="loop forever")
+    a = ap.parse_args()
+    frames = load_frames()
+    try:
+        import shutil
+        ts = shutil.get_terminal_size()
+        if ts.columns < W or ts.lines < H + 1:
+            sys.stderr.write("note: terminal %dx%d, art is %dx%d - widen the "
+                             "window or re-export at a smaller width\n"
+                             % (ts.columns, ts.lines, W, H))
+            time.sleep(1.2)
+    except Exception:
+        pass
+    sys.stdout.write("\x1b[?1049h\x1b[?25l")
+    interval = 1.0 / max(a.fps, 0.1)
+    try:
+        while True:
+            next_t = time.monotonic()
+            for txt, cols in frames:
+                sys.stdout.write(render(txt, cols))
+                sys.stdout.flush()
+                next_t += interval
+                delay = next_t - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+                else:
+                    next_t = time.monotonic()   # fell behind: resync
+            if not a.loop:
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sys.stdout.write("\x1b[0m\x1b[?25h\x1b[?1049l")
+        sys.stdout.flush()
+
+if __name__ == "__main__":
+    main()
+`;
+}
+/*CORE-END*/
+/* ============================ app glue ============================ */
+var $ = function (id) { return document.getElementById(id); };
+var state = {
+  bmp: null,            // ImageBitmap / HTMLImageElement / canvas source
+  vid: null,            // active video {el,url,name,dur,playing,lastT,raf}
+  name: "sample",
+  grid: null,           // current ASCII grid
+  zoom: 0,              // px per cell width; 0 = fit
+  panX: 0, panY: 0,
+  drag: null,
+  opts: function () {
+    return {
+      ramp: +$("ramp").value,
+      invert: $("invert").checked,
+      bright: +$("bright").value,
+      contrast: +$("contrast").value,
+      gamma: +$("gamma").value,
+      sharp: +$("sharp").value,
+      color: $("color").checked,
+      tint: $("tint").value,
+      width: clamp(+$("width").value | 0, MIN_W, MAX_W),
+      lineh: +$("lineh").value,
+      fps: clamp(Math.round(+$("fps").value), 1, 30)
+    };
+  }
+};
+
+var cv = $("cv"), ctx = cv.getContext("2d");
+var BG = "#ffffff";                     // paper background
+var ADV = 0.6;   // nominal monospace advance: cell width per 1em font size
+var vcan = document.createElement("canvas");   // offscreen video frame grab
+var vctx = vcan.getContext("2d");
+
+/* Resize source -> w x h cells (browser scaler, high quality). Uses
+   progressive halving for clean minification of big photos. */
+function resample(bmp, w, h) {
+  var cur = bmp, cw = bmp.width, ch = bmp.height, t, tx;
+  while (cw > w * 2 && ch > h * 2) {
+    t = document.createElement("canvas");
+    t.width = Math.max(w, Math.floor(cw / 2));
+    t.height = Math.max(h, Math.floor(ch / 2));
+    tx = t.getContext("2d");
+    tx.imageSmoothingEnabled = true;
+    tx.imageSmoothingQuality = "high";
+    tx.drawImage(cur, 0, 0, cw, ch, 0, 0, t.width, t.height);
+    cur = t; cw = t.width; ch = t.height;
+  }
+  var c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  var x = c.getContext("2d", { willReadFrequently: true });
+  x.imageSmoothingEnabled = true;
+  x.imageSmoothingQuality = "high";
+  x.fillStyle = "#fff";          // flatten transparency onto white, not black
+  x.fillRect(0, 0, w, h);
+  x.drawImage(cur, 0, 0, cw, ch, 0, 0, w, h);
+  return x.getImageData(0, 0, w, h);
+}
+
+/* Full rebuild: active source (video frame or image) -> grid.
+   Debounced via schedule(). */
+function buildFromSource(src) {
+  var o = state.opts(), t0 = performance.now();
+  var dims = gridDims(src.width, src.height, o.width, o.lineh);
+  var id = resample(src, dims.w, dims.h);
+  state.grid = gridFromImage(id, o);
+  state.grid.ms = performance.now() - t0;
+  if (state.zoom === 0) fitZoom(); else draw();
+}
+
+function rebuild() {
+  if (state.vid) {
+    var src = videoFrameCanvas();
+    if (!src) return;
+    buildFromSource(src);
+  } else {
+    if (!state.bmp) return;
+    buildFromSource(state.bmp);
+  }
+  status();
+}
+
+function cellSize() {
+  var o = state.opts();
+  var z = state.zoom || fitCalc();
+  return { cw: z, ch: z * (o.lineh / ADV) };
+}
+
+function fitCalc() {
+  var g = state.grid;
+  if (!g) return 6;
+  var r = $("stage").getBoundingClientRect();
+  var cr = state.opts().lineh / ADV;    // cell height:width ratio
+  return Math.max(0.35, Math.min((r.width - 24) / g.w,
+                                 (r.height - 24) / (g.h * cr)));
+}
+
+function fitZoom() {
+  state.zoom = 0;
+  centerPan();
+  draw();
+}
+
+function centerPan() {
+  var g = state.grid;
+  if (!g) return;
+  var r = $("stage").getBoundingClientRect();
+  var s = cellSize();
+  state.panX = (r.width - g.w * s.cw) / 2;
+  state.panY = (r.height - g.h * s.ch) / 2;
+}
+
+function draw() {
+  var r = $("stage").getBoundingClientRect();
+  var dpr = window.devicePixelRatio || 1;
+  var W = Math.max(1, Math.round(r.width * dpr));
+  var H = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, r.width, r.height);
+  var g = state.grid;
+  if (!g) return;
+  var s = cellSize();
+  var cw = s.cw, ch = s.ch;
+  var fs = Math.max(1, cw / ADV);
+  ctx.font = fs + 'px Menlo, Consolas, "Cascadia Mono", monospace';
+  ctx.textBaseline = "middle";
+  var x0 = Math.max(0, Math.floor(-state.panX / cw));
+  var x1 = Math.min(g.w, Math.ceil((r.width - state.panX) / cw));
+  var y0 = Math.max(0, Math.floor(-state.panY / ch));
+  var y1 = Math.min(g.h, Math.ceil((r.height - state.panY) / ch));
+  var o = state.opts();
+  var colorOn = o.color;
+  var mono = o.tint;
+  for (var y = y0; y < y1; y++) {
+    var row = g.rows[y];
+    var py = state.panY + y * ch + ch / 2;
+    var x = x0;
+    while (x < x1) {
+      var q = (y * g.w + x) * 3;
+      if (colorOn) {
+        ctx.fillStyle = "rgb(" + g.colors[q] + "," + g.colors[q + 1] + "," +
+                        g.colors[q + 2] + ")";
+      } else {
+        ctx.fillStyle = mono;
+      }
+      var px = state.panX + x * cw;
+      var count = 0;
+      while (x + count < x1) {
+        if (colorOn) {
+          var q2 = (y * g.w + x + count) * 3;
+          if (g.colors[q2] !== g.colors[q] ||
+              g.colors[q2 + 1] !== g.colors[q + 1] ||
+              g.colors[q2 + 2] !== g.colors[q + 2]) break;
+        }
+        count++;
+      }
+      if (count > 1 && cw < 3) {
+        ctx.fillText(row.substr(x, count), px, py);   // tiny cells: batch
+      } else {
+        for (var k = 0; k < count; k++)
+          ctx.fillText(row[x + k], px + k * cw, py);
+      }
+      x += count;
+    }
+  }
+}
+
+function status() {
+  if (exporting) return;
+  var g = state.grid;
+  if (!g) { $("status").textContent = "nothing loaded — open an image or video"; return; }
+  var pct = state.zoom === 0 ? "fit" : Math.round(cellSize().cw / 8 * 100) + "%";
+  var v = state.vid;
+  var vt = v ? " &middot; " + v.dur.toFixed(1) + "s &middot; " +
+    Math.max(1, Math.ceil(v.dur * (+$("fps").value | 0))) + " frames @" +
+    (+$("fps").value | 0) + "fps" : "";
+  $("status").innerHTML = state.name + " &middot; <b>" + g.w + "×" + g.h +
+    "</b> cells (" + (g.w * g.h).toLocaleString() + ") &middot; " +
+    RAMPS[+$("ramp").value][0] + " &middot; render " + g.ms.toFixed(0) +
+    " ms &middot; zoom " + pct + vt;
+}
+
+var toastT = null;
+function toast(msg) {
+  var t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastT);
+  toastT = setTimeout(function () { t.classList.remove("show"); }, 1800);
+}
+/* ---------------- image loading ---------------- */
+function setImage(src, name) {          // src: img/canvas element
+  stopVideo();
+  state.bmp = src;
+  state.name = name;
+  state.zoom = 0;
+  rebuild();
+}
+
+function loadBlob(blob, name) {
+  var img = new Image();
+  img.onload = function () { setImage(img, name); };
+  img.onerror = function () { toast("could not decode image"); };
+  img.src = URL.createObjectURL(blob);
+}
+
+function openFile(f) {
+  if (!f) return;
+  if (/^video\//.test(f.type)) { loadVideo(f); return; }
+  if (!/^image\//.test(f.type)) { toast("not an image or video: " + f.name); return; }
+  loadBlob(f, f.name);
+  $("fname").textContent = f.name + " (" + Math.ceil(f.size / 1024) + " KB)";
+}
+
+/* ---------------- video ---------------- */
+var exporting = false;
+var MAX_FRAMES = 900;                   // export cap (~90s @ 10fps)
+
+function statusExport(html) { $("status").innerHTML = html; }
+
+function stopVideo() {
+  var v = state.vid;
+  if (!v) return;
+  v.playing = false;
+  if (v.raf) cancelAnimationFrame(v.raf);
+  try { v.el.pause(); } catch (e) {}
+  URL.revokeObjectURL(v.url);
+  state.vid = null;
+  $("vidBtns").style.display = "none";
+  $("exPy").disabled = true;
+}
+
+function videoFrameCanvas() {
+  var v = state.vid, el = v && v.el;
+  if (!el || el.readyState < 2 || !el.videoWidth) return null;
+  if (vcan.width !== el.videoWidth) vcan.width = el.videoWidth;
+  if (vcan.height !== el.videoHeight) vcan.height = el.videoHeight;
+  vctx.drawImage(el, 0, 0);
+  return vcan;
+}
+
+function loadVideo(f) {
+  stopVideo();
+  var el = document.createElement("video");
+  el.muted = true; el.loop = true; el.playsInline = true; el.preload = "auto";
+  var url = URL.createObjectURL(f);
+  var v = state.vid = { el: el, url: url, name: f.name,
+                        dur: 0, playing: false, lastT: -1, raf: 0 };
+  state.name = f.name;
+  el.src = url;
+  el.addEventListener("loadedmetadata", function () {
+    if (state.vid !== v) return;
+    if (!isFinite(el.duration) || el.duration <= 0) {
+      toast("video has no readable duration"); stopVideo(); return;
+    }
+    v.dur = el.duration;
+    $("vidBtns").style.display = "flex";
+    $("exPy").disabled = false;
+    state.zoom = 0;
+    el.currentTime = 0.001;             // 'seeked' renders the first frame
+  });
+  el.addEventListener("seeked", function () {
+    if (state.vid !== v || v.playing || exporting) return;
+    if (videoFrameCanvas()) buildFromSource(videoFrameCanvas());
+    status();
+  });
+  el.addEventListener("play", function () {
+    if (state.vid !== v) return;
+    v.playing = true;
+    $("play").innerHTML = "&#10074;&#10074; pause";
+    if (!v.raf) v.raf = requestAnimationFrame(vloop);
+  });
+  el.addEventListener("pause", function () {
+    if (state.vid !== v) return;
+    v.playing = false;
+    $("play").innerHTML = "&#9654; play";
+    if (v.raf) { cancelAnimationFrame(v.raf); v.raf = 0; }
+    if (!exporting && videoFrameCanvas()) buildFromSource(videoFrameCanvas());
+    status();
+  });
+  $("fname").textContent = f.name + " (" + Math.ceil(f.size / 1024) + " KB)";
+  toast("video loading&hellip;");
+}
+
+function togglePlay() {
+  var v = state.vid;
+  if (!v) return;
+  if (v.playing) v.el.pause();
+  else if (v.el.readyState >= 2) v.el.play().catch(function () {});
+}
+
+function vloop() {
+  var v = state.vid;
+  if (!v || !v.playing) { if (v) v.raf = 0; return; }
+  var el = v.el;
+  if (el.readyState >= 2 && el.currentTime !== v.lastT) {
+    v.lastT = el.currentTime;           // only rebuild on new frames
+    var src = videoFrameCanvas();
+    if (src) buildFromSource(src);
+  }
+  v.raf = requestAnimationFrame(vloop);
+}
+
+function seekTo(t) {
+  return new Promise(function (res) {
+    var el = state.vid.el, done = false;
+    function h() {
+      if (done) return;
+      done = true;
+      el.removeEventListener("seeked", h);
+      res();
+    }
+    el.addEventListener("seeked", h);
+    el.currentTime = Math.max(0, Math.min(t, el.duration - 0.001));
+    setTimeout(h, 1000);                // safety net for stalled seeks
+  });
+}
+
+async function exportPy() {
+  var v = state.vid, el = v && v.el;
+  if (!v || exporting) return;
+  if (!isFinite(el.duration) || el.duration <= 0) { toast("video not ready"); return; }
+  exporting = true;
+  if (v.playing) el.pause();
+  var o = state.opts();
+  var dims = gridDims(el.videoWidth, el.videoHeight, o.width, o.lineh);
+  var total = Math.max(1, Math.ceil(v.dur * o.fps));
+  var n = Math.min(total, MAX_FRAMES);
+  try {
+    var parts = [];
+    for (var i = 0; i < n; i++) {
+      statusExport("capturing frame " + (i + 1) + "/" + n + "&hellip;");
+      await seekTo(i / o.fps);
+      var src = videoFrameCanvas();
+      if (!src) break;
+      var g = gridFromImage(resample(src, dims.w, dims.h), o);
+      parts.push(packFrame(g.rows, g.colors, g.w, g.h));
+    }
+    statusExport("packing " + parts.length + " frames&hellip;");
+    var blob = concatU8(parts), algo = "raw", data = blob;
+    if (window.CompressionStream && Blob.prototype.stream) {
+      try {
+        var st = new Blob([blob]).stream()
+          .pipeThrough(new CompressionStream("deflate"));
+        data = new Uint8Array(await new Response(st).arrayBuffer());
+        algo = "zlib";
+      } catch (e) { data = blob; algo = "raw"; }
+    }
+    var src_py = buildPlayerPy(v.name, dims.w, dims.h, o.fps, v.dur,
+                               parts.length, algo, b64Encode(data));
+    download(baseName() + "_" + dims.w + "w_" + parts.length + "f.py",
+             new Blob([src_py], { type: "text/x-python" }));
+    toast("saved python player (" + parts.length + " frames)");
+    statusExport("exported " + parts.length + " frames · " +
+      dims.w + "×" + dims.h + " @ " + o.fps + "fps · " +
+      (src_py.length / 1024).toFixed(0) + " KB script" +
+      (total > n ? " (capped at " + MAX_FRAMES + ")" : ""));
+  } finally {
+    exporting = false;
+    el.currentTime = 0.001;
+    if (videoFrameCanvas()) buildFromSource(videoFrameCanvas());
+    status();
+  }
+}
+
+/* ---------------- view input ---------------- */
+function initInput() {
+  var stage = $("stage");
+  cv.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var g = state.grid;
+    if (!g) return;
+    var rect = cv.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    var s = cellSize();
+    var z = state.zoom || s.cw;
+    var f = Math.pow(1.0016, -e.deltaY * (e.deltaMode === 1 ? 16 : 1));
+    var nz = clamp(z * f, 0.35, 64);
+    var cx = (mx - state.panX) / s.cw, cy = (my - state.panY) / s.ch;
+    state.zoom = nz;
+    state.panX = mx - cx * nz;
+    state.panY = my - cy * nz * (state.opts().lineh / ADV);
+    scheduleDraw();
+  }, { passive: false });
+
+  cv.addEventListener("mousedown", function (e) {
+    state.drag = { x: e.clientX, y: e.clientY, px: state.panX, py: state.panY };
+    cv.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", function (e) {
+    if (!state.drag) return;
+    state.panX = state.drag.px + e.clientX - state.drag.x;
+    state.panY = state.drag.py + e.clientY - state.drag.y;
+    scheduleDraw();
+  });
+  window.addEventListener("mouseup", function () {
+    state.drag = null;
+    cv.classList.remove("dragging");
+  });
+  cv.addEventListener("dblclick", fitZoom);
+
+  stage.addEventListener("dragover", function (e) {
+    e.preventDefault();
+    $("drop").classList.add("over");
+  });
+  stage.addEventListener("dragleave", function () {
+    $("drop").classList.remove("over");
+  });
+  stage.addEventListener("drop", function (e) {
+    e.preventDefault();
+    $("drop").classList.remove("over");
+    if (e.dataTransfer.files.length) openFile(e.dataTransfer.files[0]);
+  });
+  window.addEventListener("paste", function (e) {
+    var items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (var i = 0; i < items.length; i++)
+      if (/^image\//.test(items[i].type)) {
+        loadBlob(items[i].getAsFile(), "pasted image");
+        $("fname").textContent = "clipboard image";
+        return;
+      }
+  });
+
+  var raf = null;
+  window.addEventListener("resize", function () {
+    if (raf) return;
+    raf = requestAnimationFrame(function () { raf = null; draw(); });
+  });
+}
+
+var drawQueued = false;
+function scheduleDraw() {
+  if (drawQueued) return;
+  drawQueued = true;
+  requestAnimationFrame(function () { drawQueued = false; draw(); status(); });
+}
+
+var rebuildT = null;
+function scheduleRebuild() {
+  clearTimeout(rebuildT);
+  rebuildT = setTimeout(rebuild, 90);
+}
+/* ---------------- export ---------------- */
+function download(name, blob) {
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+}
+
+function baseName() {
+  return (state.name || "ascii").replace(/\.[^.]+$/, "").replace(/\s+/g, "_");
+}
+
+function exportTXT() {
+  if (!state.grid) return;
+  download(baseName() + "_" + state.grid.w + "w.txt",
+           new Blob([toTXT(state.grid)], { type: "text/plain" }));
+  toast("saved .txt");
+}
+
+function exportANS() {
+  if (!state.grid) return;
+  download(baseName() + "_" + state.grid.w + "w.ans",
+           new Blob([toANSI(state.grid)], { type: "text/plain" }));
+  toast("saved .ans (truecolor — cat it in a 24-bit terminal)");
+}
+
+function exportCopy() {
+  if (!state.grid) return;
+  navigator.clipboard.writeText(toTXT(state.grid)).then(
+    function () { toast("ASCII text copied"); },
+    function () { toast("clipboard blocked by browser"); });
+}
+
+function exportPNG() {
+  var g = state.grid, o = state.opts();
+  if (!g) return;
+  var MAXD = 16000, MAXAREA = 64e6, ratio = o.lineh / ADV;
+  var cw = Math.min(9, Math.floor(MAXD / g.w),
+                    Math.floor(MAXD / (g.h * ratio)));
+  cw = Math.min(cw, Math.floor(Math.sqrt(MAXAREA / (g.w * g.h * ratio))));
+  cw = Math.max(2, cw);
+  var ch = Math.round(cw * ratio);
+  var c = document.createElement("canvas");
+  c.width = g.w * cw; c.height = g.h * ch;
+  var x = c.getContext("2d");
+  x.fillStyle = BG;
+  x.fillRect(0, 0, c.width, c.height);
+  x.font = (cw / ADV) + 'px Menlo, Consolas, "Cascadia Mono", monospace';
+  x.textBaseline = "middle";
+  for (var y = 0; y < g.h; y++) {
+    var py = y * ch + ch / 2, xx = 0;
+    while (xx < g.w) {
+      var q = (y * g.w + xx) * 3;
+      x.fillStyle = o.color
+        ? "rgb(" + g.colors[q] + "," + g.colors[q + 1] + "," + g.colors[q + 2] + ")"
+        : o.tint;
+      var n = 0;
+      while (xx + n < g.w) {
+        if (o.color) {
+          var q2 = (y * g.w + xx + n) * 3;
+          if (g.colors[q2] !== g.colors[q] ||
+              g.colors[q2 + 1] !== g.colors[q + 1] ||
+              g.colors[q2 + 2] !== g.colors[q + 2]) break;
+        }
+        n++;
+      }
+      for (var k = 0; k < n; k++)
+        x.fillText(g.rows[y][xx + k], (xx + k) * cw, py);
+      xx += n;
+    }
+  }
+  c.toBlob(function (b) {
+    download(baseName() + "_" + g.w + "w.png", b);
+    toast("saved .png (" + c.width + "×" + c.height + ")");
+  }, "image/png");
+}
+
+/* ---------------- wiring ---------------- */
+function init() {
+  var sel = $("ramp"), i;
+  for (i = 0; i < RAMPS.length; i++) {
+    var op = document.createElement("option");
+    op.value = i;
+    op.textContent = RAMPS[i][0] + "  (" + RAMPS[i][1].length + ")";
+    sel.appendChild(op);
+  }
+  sel.value = 0;
+
+  $("open").onclick = function () { $("file").click(); };
+  $("file").onchange = function () { openFile($("file").files[0]); };
+  $("sample").onclick = function () {
+    var c = document.createElement("canvas");
+    c.width = 800; c.height = 600;
+    var x = c.getContext("2d");
+    x.putImageData(sampleImageData(800, 600), 0, 0);
+    setImage(c, "sample gradient");
+    $("fname").textContent = "synthetic sample (800×600)";
+  };
+
+  function bind(id, dec) {
+    $(id).addEventListener("input", function () {
+      $(id + "V").textContent = dec
+        ? (+$(id).value).toFixed(2)
+        : String($(id).value);
+      scheduleRebuild();
+    });
+  }
+  bind("width", false); bind("lineh", true); bind("sharp", false);
+  bind("fps", false);
+  bind("bright", true); bind("contrast", true); bind("gamma", true);
+
+  sel.addEventListener("change", rebuild);
+  $("invert").addEventListener("change", rebuild);
+  $("color").addEventListener("change", function () { scheduleDraw(); });
+  $("tint").addEventListener("input", function () { scheduleDraw(); });
+
+  $("exTxt").onclick = exportTXT;
+  $("exAns").onclick = exportANS;
+  $("exPng").onclick = exportPNG;
+  $("exCopy").onclick = exportCopy;
+  $("exPy").onclick = function () { exportPy(); };
+  $("play").onclick = togglePlay;
+
+  $("fit").onclick = fitZoom;
+  $("z100").onclick = function () { state.zoom = 8; centerPan(); scheduleDraw(); };
+  $("zIn").onclick = function () {
+    state.zoom = clamp((state.zoom || fitCalc()) * 1.3, 0.35, 64);
+    scheduleDraw();
+  };
+  $("zOut").onclick = function () {
+    state.zoom = clamp((state.zoom || fitCalc()) / 1.3, 0.35, 64);
+    scheduleDraw();
+  };
+
+  window.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" ||
+        e.target.tagName === "BUTTON") return;
+    var step = 60;
+    if (e.key === "+") { $("zIn").onclick(); }
+    else if (e.key === "-") { $("zOut").onclick(); }
+    else if (e.key === "f") { fitZoom(); }
+    else if (e.key === " ") { if (state.vid) togglePlay(); }
+    else if (e.key === "ArrowLeft") { state.panX += step; scheduleDraw(); }
+    else if (e.key === "ArrowRight") { state.panX -= step; scheduleDraw(); }
+    else if (e.key === "ArrowUp") { state.panY += step; scheduleDraw(); }
+    else if (e.key === "ArrowDown") { state.panY -= step; scheduleDraw(); }
+    else { return; }
+    e.preventDefault();
+  });
+
+  initInput();
+  $("sample").onclick();          // start with the sample loaded
+}
+
+init();
+
+
+
+
+</script>
+
+</body>
+
+</html>
